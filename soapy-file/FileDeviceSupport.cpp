@@ -25,13 +25,16 @@ public:
     SoapySDR::logf(SOAPY_SDR_INFO, "Opening File Device with path: %s",
                    path.c_str());
     if (!file.is_open()) {
-      throw std::runtime_error("Failed to open file %s", path.c_str());
+      throw std::runtime_error("Failed to open file");
     }
   }
 
   SoapySDR::Stream *setupStream(const int direction, const std::string &format,
                                 const std::vector<size_t> &channels = {},
                                 const SoapySDR::Kwargs &args = {}) override {
+    (void)channels;
+    (void)args;
+
     SoapySDR::log(SOAPY_SDR_INFO,
                   std::format("setupStream: direction: {}, format: {}",
                               direction, format));
@@ -54,6 +57,8 @@ public:
   }
 
   size_t getStreamMTU(SoapySDR::Stream *stream) const override {
+    (void)stream;
+
     // return 131072;
     return 0x20000;
   }
@@ -61,6 +66,11 @@ public:
   int readStream(SoapySDR::Stream *stream, void *const *buffs,
                  const size_t numElems, int &flags, long long &timeNs,
                  const long timeoutUs = 100000) override {
+    (void)stream;
+    (void)flags;
+    (void)timeNs;
+    (void)timeoutUs;
+
     void *buff = buffs[0];
     /*
     std::complex<int8_t> *buffer =
@@ -100,28 +110,19 @@ public:
   int writeStream(SoapySDR::Stream *stream, const void *const *buffs,
                   const size_t numElems, int &flags, const long long timeNs = 0,
                   const long timeoutUs = 100000) override {
+    (void)stream;
+    (void)buffs;
+    (void)numElems;
+    (void)flags;
+    (void)timeNs;
+    (void)timeoutUs;
+
     return 0;
-    // std::string log = std::format("writeStream: stream: {}, buffs: {},
-    // numElems: {}, flags: {}, timeNs: {}, timeoutUs: {}", (void*)stream,
-    // (void*)buffs, numElems, flags, timeNs, timeoutUs);
-    // SoapySDR::log(SOAPY_SDR_INFO, log);
-
-    // // Write to the world
-    // const std::complex<int8_t> *buffer = (const std::complex<int8_t>
-    // *)buffs[0]; // channel 0 for (size_t i = 0; i < numElems; i++) {
-    //   world.push(buffer[i]);
-    // }
-
-    // return numElems;
   }
 };
 
 static SoapySDR::KwargsList find_file_device(const SoapySDR::Kwargs &args) {
-  // std::cout << "find_file_device" << std::endl;
-  // for (auto &arg : args) {
-  //   std::cout << arg.first << ": " << arg.second << std::endl;
-  // }
-  // std::cout << std::endl;
+  (void)args;
 
   return {{
       {"device", "FIle Device"},
