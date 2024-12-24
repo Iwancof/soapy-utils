@@ -117,11 +117,11 @@ public:
 };
 
 static SoapySDR::KwargsList find_file_device(const SoapySDR::Kwargs &args) {
-  std::cout << "find_file_device" << std::endl;
-  for (auto &arg : args) {
-    std::cout << arg.first << ": " << arg.second << std::endl;
-  }
-  std::cout << std::endl;
+  // std::cout << "find_file_device" << std::endl;
+  // for (auto &arg : args) {
+  //   std::cout << arg.first << ": " << arg.second << std::endl;
+  // }
+  // std::cout << std::endl;
 
   return {{
       {"device", "FIle Device"},
