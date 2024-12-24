@@ -22,30 +22,35 @@ private:
 public:
   FileDevice(std::filesystem::path path) : file(path) {
     // show path
-    SoapySDR::log(SOAPY_SDR_INFO, std::format("FileDevice: {}", path.string()));
+    SoapySDR::logf(SOAPY_SDR_INFO, "Opening File Device with path: %s",
+                   path.c_str());
     if (!file.is_open()) {
       SoapySDR::log(SOAPY_SDR_ERROR, "Failed to open file");
     }
   }
 
-  SoapySDR::Stream* setupStream(const int direction, const std::string &format, const std::vector<size_t> &channels = {}, const SoapySDR::Kwargs &args = {}) override {
-    SoapySDR::log(SOAPY_SDR_INFO, std::format("setupStream: direction: {}, format: {}", direction, format));
+  SoapySDR::Stream *setupStream(const int direction, const std::string &format,
+                                const std::vector<size_t> &channels = {},
+                                const SoapySDR::Kwargs &args = {}) override {
+    SoapySDR::log(SOAPY_SDR_INFO,
+                  std::format("setupStream: direction: {}, format: {}",
+                              direction, format));
 
-    if(direction != SOAPY_SDR_RX) {
+    if (direction != SOAPY_SDR_RX) {
       SoapySDR::log(SOAPY_SDR_ERROR, "Only RX is supported");
       return NULL;
     }
-    
-    if(format == SOAPY_SDR_CS8) {
+
+    if (format == SOAPY_SDR_CS8) {
       stream_type = 0;
-    } else if(format == SOAPY_SDR_CF32) {
+    } else if (format == SOAPY_SDR_CF32) {
       stream_type = 1;
     } else {
       SoapySDR::log(SOAPY_SDR_ERROR, "Unsupported format");
       return NULL;
     }
 
-    return (SoapySDR::Stream*)1;
+    return (SoapySDR::Stream *)1;
   }
 
   size_t getStreamMTU(SoapySDR::Stream *stream) const override {
@@ -63,7 +68,7 @@ public:
     */
     std::complex<int8_t> *buffer_ci8 = (std::complex<int8_t> *)buff;
     std::complex<float> *buffer_cf32 = (std::complex<float> *)buff;
-   
+
     if (file.eof()) {
       SoapySDR::log(SOAPY_SDR_ERROR, "file buffer has been EOF");
       return SOAPY_SDR_UNDERFLOW;
@@ -84,7 +89,8 @@ public:
       if (stream_type == 0) {
         buffer_ci8[i] = std::complex<int8_t>(real, imag);
       } else {
-        buffer_cf32[i] = std::complex<float>((float)real / 127.0f, (float)imag / 127.0f);
+        buffer_cf32[i] =
+            std::complex<float>((float)real / 127.0f, (float)imag / 127.0f);
       }
     }
 
