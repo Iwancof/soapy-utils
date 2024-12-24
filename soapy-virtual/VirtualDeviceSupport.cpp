@@ -69,7 +69,7 @@ public:
 };
 
 static SoapySDR::KwargsList find_virtual_device(const SoapySDR::Kwargs &args) {
-  std::cout << "find_virtual_device" << std::endl;
+  // std::cout << "find_virtual_device" << std::endl;
   // for(auto &arg : args) {
   //   std::cout << arg.first << ": " << arg.second << std::endl;
   // }
