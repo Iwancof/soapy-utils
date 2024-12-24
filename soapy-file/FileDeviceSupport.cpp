@@ -25,7 +25,7 @@ public:
     SoapySDR::logf(SOAPY_SDR_INFO, "Opening File Device with path: %s",
                    path.c_str());
     if (!file.is_open()) {
-      SoapySDR::log(SOAPY_SDR_ERROR, "Failed to open file");
+      throw std::runtime_error("Failed to open file %s", path.c_str());
     }
   }
 
