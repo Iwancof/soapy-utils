@@ -12,6 +12,10 @@ std::queue<std::complex<int8_t>> world;
 
 class VirtualDevice : public SoapySDR::Device {
 public:
+  VirtualDevice() {
+    SoapySDR_logf(SOAPY_SDR_INFO, "Opening Virtual Device: %p", &world);
+  }
+
   int readStream(SoapySDR::Stream *stream, void *const *buffs,
                  const size_t numElems, int &flags, long long &timeNs,
                  const long timeoutUs = 100000) override {
