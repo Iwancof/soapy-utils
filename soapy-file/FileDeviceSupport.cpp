@@ -72,10 +72,6 @@ public:
       file =
           new std::variant<std::ifstream, std::ofstream>(std::ofstream(path));
 
-      // write test
-      std::ofstream &file = std::get<std::ofstream>(*this->file);
-      file << 3 << std::endl;
-
       return TxStream;
     }
   }
