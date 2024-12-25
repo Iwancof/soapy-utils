@@ -10,24 +10,21 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <iostream>
-#include <queue>
+#include <variant>
 
 class FileDevice : public SoapySDR::Device {
 private:
-  std::ifstream file;
+  std::filesystem::path path;
+
+  std::variant<std::ifstream, std::ofstream> *file = nullptr;
 
   int stream_type; // 0: CS8, 1: CF32
 
+  SoapySDR::Stream *const RxStream = (SoapySDR::Stream *)1;
+  SoapySDR::Stream *const TxStream = (SoapySDR::Stream *)2;
+
 public:
-  FileDevice(std::filesystem::path path) : file(path) {
-    // show path
-    SoapySDR::logf(SOAPY_SDR_INFO, "Opening File Device with path: %s",
-                   path.c_str());
-    if (!file.is_open()) {
-      throw std::runtime_error("Failed to open file");
-    }
-  }
+  FileDevice(std::filesystem::path path) : path(path) {}
 
   SoapySDR::Stream *setupStream(const int direction, const std::string &format,
                                 const std::vector<size_t> &channels = {},
@@ -39,21 +36,44 @@ public:
                   std::format("setupStream: direction: {}, format: {}",
                               direction, format));
 
-    if (direction != SOAPY_SDR_RX) {
-      SoapySDR::log(SOAPY_SDR_ERROR, "Only RX is supported");
+    if (file != nullptr) {
+      SoapySDR::log(SOAPY_SDR_ERROR, "Stream has already been set up");
       return NULL;
     }
 
-    if (format == SOAPY_SDR_CS8) {
-      stream_type = 0;
-    } else if (format == SOAPY_SDR_CF32) {
-      stream_type = 1;
+    if (direction == SOAPY_SDR_RX) {
+      if (format == SOAPY_SDR_CS8) {
+        stream_type = 0;
+      } else if (format == SOAPY_SDR_CF32) {
+        stream_type = 1;
+      } else {
+        SoapySDR::log(SOAPY_SDR_ERROR, "Unsupported format (RX)");
+        return NULL;
+      }
+
+      SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Rx) with path: %s",
+                     path.c_str());
+
+      // open file as input
+      file =
+          new std::variant<std::ifstream, std::ofstream>(std::ifstream(path));
+
+      return RxStream;
     } else {
-      SoapySDR::log(SOAPY_SDR_ERROR, "Unsupported format");
-      return NULL;
-    }
+      if (format != SOAPY_SDR_CS8) {
+        SoapySDR::log(SOAPY_SDR_ERROR, "Unsupported format (TX)");
+        return NULL;
+      }
 
-    return (SoapySDR::Stream *)1;
+      SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Tx) with path: %s",
+                     path.c_str());
+
+      // open file as output
+      file =
+          new std::variant<std::ifstream, std::ofstream>(std::ofstream(path));
+
+      return TxStream;
+    }
   }
 
   size_t getStreamMTU(SoapySDR::Stream *stream) const override {
@@ -71,11 +91,20 @@ public:
     (void)timeNs;
     (void)timeoutUs;
 
+    if (file == nullptr) {
+      SoapySDR::log(SOAPY_SDR_ERROR, "Stream has not been set up");
+      return 0;
+    }
+
+    if (file->index() == 1) {
+      SoapySDR::log(SOAPY_SDR_ERROR, "File is opened as output");
+      return 0;
+    }
+
+    std::ifstream &file = std::get<std::ifstream>(*this->file);
+
     void *buff = buffs[0];
-    /*
-    std::complex<int8_t> *buffer =
-        (std::complex<int8_t> *)buffs[0]; // channel 0
-    */
+
     std::complex<int8_t> *buffer_ci8 = (std::complex<int8_t> *)buff;
     std::complex<float> *buffer_cf32 = (std::complex<float> *)buff;
 
