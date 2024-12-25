@@ -157,11 +157,19 @@ public:
 static SoapySDR::KwargsList find_file_device(const SoapySDR::Kwargs &args) {
   (void)args;
 
-  return {{
-      {"device", "FIle Device"},
+  SoapySDR::KwargsList devices = {{
+      {"device", "File Device"},
       {"driver", "file"},
       {"label", "File Device"},
   }};
+
+  for(auto &arg : args) {
+    if (arg.first == "path") {
+      devices[0]["path"] = arg.second;
+    }
+  }
+
+  return devices;
 }
 
 static SoapySDR::Device *make_file_device(const SoapySDR::Kwargs &args) {
