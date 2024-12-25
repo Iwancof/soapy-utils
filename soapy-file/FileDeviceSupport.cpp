@@ -37,8 +37,7 @@ public:
                               direction, format));
 
     if (file != nullptr) {
-      SoapySDR::log(SOAPY_SDR_ERROR, "Stream has already been set up");
-      return NULL;
+      throw std::runtime_error("Stream has already been set up");
     }
 
     if (direction == SOAPY_SDR_RX) {
@@ -47,8 +46,7 @@ public:
       } else if (format == SOAPY_SDR_CF32) {
         stream_type = 1;
       } else {
-        SoapySDR::log(SOAPY_SDR_ERROR, "Unsupported format (RX)");
-        return NULL;
+        throw std::runtime_error("Unsupported format (RX)");
       }
 
       SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Rx) with path: %s",
@@ -60,9 +58,12 @@ public:
 
       return RxStream;
     } else {
-      if (format != SOAPY_SDR_CS8) {
-        SoapySDR::log(SOAPY_SDR_ERROR, "Unsupported format (TX)");
-        return NULL;
+      if (format == SOAPY_SDR_CS8) {
+        stream_type = 0;
+      } else if (format == SOAPY_SDR_CF32) {
+        stream_type = 1;
+      } else {
+        throw std::runtime_error("Unsupported format (TX)");
       }
 
       SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Tx) with path: %s",
@@ -91,14 +92,16 @@ public:
     (void)timeNs;
     (void)timeoutUs;
 
+    if (stream != RxStream) {
+      throw std::runtime_error("Stream is not rx stream");
+    }
+
     if (file == nullptr) {
-      SoapySDR::log(SOAPY_SDR_ERROR, "Stream has not been set up");
-      return 0;
+      throw std::runtime_error("Stream has not been set up");
     }
 
     if (file->index() == 1) {
-      SoapySDR::log(SOAPY_SDR_ERROR, "File is opened as output");
-      return 0;
+      throw std::runtime_error("File is opened as output");
     }
 
     std::ifstream &file = std::get<std::ifstream>(*this->file);
@@ -139,14 +142,39 @@ public:
   int writeStream(SoapySDR::Stream *stream, const void *const *buffs,
                   const size_t numElems, int &flags, const long long timeNs = 0,
                   const long timeoutUs = 100000) override {
-    (void)stream;
-    (void)buffs;
-    (void)numElems;
-    (void)flags;
-    (void)timeNs;
-    (void)timeoutUs;
 
-    return 0;
+    if (stream != TxStream) {
+      throw std::runtime_error("Stream is not tx stream");
+    }
+
+    if (file == nullptr) {
+      throw std::runtime_error("Stream has not been set up");
+    }
+
+    if (file->index() == 0) {
+      throw std::runtime_error("File is opened as input");
+    }
+
+    std::ofstream &file = std::get<std::ofstream>(*this->file);
+
+    const void *buff = buffs[0];
+
+    const std::complex<int8_t> *buffer_ci8 = (const std::complex<int8_t> *)buff;
+    const std::complex<float> *buffer_cf32 = (const std::complex<float> *)buff;
+
+    file << numElems << std::endl;
+
+    for (size_t i = 0; i < numElems; i++) {
+      if (stream_type == 0) {
+        file << (int)buffer_ci8[i].real() << " " << (int)buffer_ci8[i].imag()
+             << std::endl;
+      } else {
+        file << (int)(buffer_cf32[i].real() * 127.0f) << " "
+             << (int)(buffer_cf32[i].imag() * 127.0f) << std::endl;
+      }
+    }
+
+    return numElems;
   }
 };
 
@@ -159,7 +187,7 @@ static SoapySDR::KwargsList find_file_device(const SoapySDR::Kwargs &args) {
       {"label", "File Device"},
   }};
 
-  for(auto &arg : args) {
+  for (auto &arg : args) {
     if (arg.first == "path") {
       devices[0]["path"] = arg.second;
     }
