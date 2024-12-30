@@ -7,24 +7,17 @@
 #include <SoapySDR/Formats.h>
 
 #include <complex>
-#include <filesystem>
-#include <format>
-#include <fstream>
-#include <variant>
+
+#include <string.h>
 
 class FileDevice : public SoapySDR::Device {
 private:
-  std::filesystem::path path;
-
-  std::variant<std::ifstream, std::ofstream> *file = nullptr;
+  char *path;
 
   int stream_type; // 0: CS8, 1: CF32
 
-  SoapySDR::Stream *const RxStream = (SoapySDR::Stream *)1;
-  SoapySDR::Stream *const TxStream = (SoapySDR::Stream *)2;
-
 public:
-  FileDevice(std::filesystem::path path) : path(path) {}
+  FileDevice(char *path) : path(path) {}
 
   SoapySDR::Stream *setupStream(const int direction, const std::string &format,
                                 const std::vector<size_t> &channels = {},
@@ -32,13 +25,12 @@ public:
     (void)channels;
     (void)args;
 
-    SoapySDR::log(SOAPY_SDR_INFO,
-                  std::format("setupStream: direction: {}, format: {}",
-                              direction, format));
+    // SoapySDR::log(SOAPY_SDR_INFO,
+    //               std::format("setupStream: direction: {}, format: {}",
+    //                           direction, format));
 
-    if (file != nullptr) {
-      throw std::runtime_error("Stream has already been set up");
-    }
+    SoapySDR::logf(SOAPY_SDR_TRACE, "setupStream: direction: %d, format: %s",
+                   direction, format.c_str());
 
     if (direction == SOAPY_SDR_RX) {
       if (format == SOAPY_SDR_CS8) {
@@ -49,14 +41,15 @@ public:
         throw std::runtime_error("Unsupported format (RX)");
       }
 
-      SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Rx) with path: %s",
-                     path.c_str());
+      SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Rx) with path: %s", path);
 
-      // open file as input
-      file =
-          new std::variant<std::ifstream, std::ofstream>(std::ifstream(path));
+      FILE *fp = fopen(path, "r");
 
-      return RxStream;
+      if (fp == NULL) {
+        throw std::runtime_error("Failed to open file");
+      }
+
+      return (SoapySDR::Stream *)fp;
     } else {
       if (format == SOAPY_SDR_CS8) {
         stream_type = 0;
@@ -66,14 +59,15 @@ public:
         throw std::runtime_error("Unsupported format (TX)");
       }
 
-      SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Tx) with path: %s",
-                     path.c_str());
+      SoapySDR::logf(SOAPY_SDR_INFO, "Opening File(Tx) with path: %s", path);
 
-      // open file as output
-      file =
-          new std::variant<std::ifstream, std::ofstream>(std::ofstream(path));
+      FILE *fp = fopen(path, "w");
 
-      return TxStream;
+      if (fp == NULL) {
+        throw std::runtime_error("Failed to open file");
+      }
+
+      return (SoapySDR::Stream *)fp;
     }
   }
 
@@ -92,42 +86,37 @@ public:
     (void)timeNs;
     (void)timeoutUs;
 
-    if (stream != RxStream) {
-      throw std::runtime_error("Stream is not rx stream");
-    }
-
-    if (file == nullptr) {
-      throw std::runtime_error("Stream has not been set up");
-    }
-
-    if (file->index() == 1) {
-      throw std::runtime_error("File is opened as output");
-    }
-
-    std::ifstream &file = std::get<std::ifstream>(*this->file);
+    FILE *fp = (FILE *)stream;
 
     void *buff = buffs[0];
 
     std::complex<int8_t> *buffer_ci8 = (std::complex<int8_t> *)buff;
     std::complex<float> *buffer_cf32 = (std::complex<float> *)buff;
 
-    if (file.eof()) {
-      SoapySDR::log(SOAPY_SDR_ERROR, "file buffer has been EOF");
+    if (feof(fp)) {
       return SOAPY_SDR_UNDERFLOW;
     }
 
     size_t size_in_file;
-    file >> size_in_file;
+    if (fscanf(fp, "%zu\n", &size_in_file) != 1) {
+      throw std::runtime_error("Failed to read size from file");
+    }
+
+    SoapySDR::logf(SOAPY_SDR_TRACE,
+                   "readStream: numElems: %zu, size_in_file: %zu", numElems,
+                   size_in_file);
 
     if (numElems < size_in_file) {
-      SoapySDR::log(SOAPY_SDR_ERROR,
-                    "Buffer size is smaller than the file size");
-      return 0;
+      throw std::runtime_error("Buffer size is smaller than the file size");
     }
 
     for (size_t i = 0; i < size_in_file; i++) {
       int real, imag;
-      file >> real >> imag;
+
+      if (fscanf(fp, "%d %d\n", &real, &imag) != 2) {
+        throw std::runtime_error("Failed to read data from file");
+      }
+
       if (stream_type == 0) {
         buffer_ci8[i] = std::complex<int8_t>(real, imag);
       } else {
@@ -143,34 +132,29 @@ public:
                   const size_t numElems, int &flags, const long long timeNs = 0,
                   const long timeoutUs = 100000) override {
 
-    if (stream != TxStream) {
-      throw std::runtime_error("Stream is not tx stream");
-    }
-
-    if (file == nullptr) {
-      throw std::runtime_error("Stream has not been set up");
-    }
-
-    if (file->index() == 0) {
-      throw std::runtime_error("File is opened as input");
-    }
-
-    std::ofstream &file = std::get<std::ofstream>(*this->file);
+    FILE *fp = (FILE *)stream;
 
     const void *buff = buffs[0];
 
     const std::complex<int8_t> *buffer_ci8 = (const std::complex<int8_t> *)buff;
     const std::complex<float> *buffer_cf32 = (const std::complex<float> *)buff;
 
-    file << numElems << std::endl;
+    // file << numElems << std::endl;
+    // if (!(bool)file) {
+    //   throw std::runtime_error("Failed to write size to file");
+    // }
+
+    fprintf(fp, "%zu\n", numElems);
+
+    SoapySDR::logf(SOAPY_SDR_TRACE, "writeStream: numElems: %zu", numElems);
 
     for (size_t i = 0; i < numElems; i++) {
       if (stream_type == 0) {
-        file << (int)buffer_ci8[i].real() << " " << (int)buffer_ci8[i].imag()
-             << std::endl;
+        fprintf(fp, "%d %d\n", (int)buffer_ci8[i].real(),
+                (int)buffer_ci8[i].imag());
       } else {
-        file << (int)(buffer_cf32[i].real() * 127.0f) << " "
-             << (int)(buffer_cf32[i].imag() * 127.0f) << std::endl;
+        fprintf(fp, "%d %d\n", (int)(buffer_cf32[i].real() * 127.0f),
+                (int)(buffer_cf32[i].imag() * 127.0f));
       }
     }
 
@@ -198,10 +182,11 @@ static SoapySDR::KwargsList find_file_device(const SoapySDR::Kwargs &args) {
 
 static SoapySDR::Device *make_file_device(const SoapySDR::Kwargs &args) {
   // get `path` argument
-  std::filesystem::path path;
+
+  char *path;
   for (auto &arg : args) {
     if (arg.first == "path") {
-      path = arg.second;
+      path = strdup(arg.second.c_str());
     }
   }
 

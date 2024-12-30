@@ -3,7 +3,7 @@
 # We recommend that the support module be built in-tree with the driver.
 ########################################################################
 cmake_minimum_required(VERSION 2.6)
-project(SoapySDRMyDevice CXX)
+project(SoapySDRVirtual CXX)
 enable_testing()
 
 # set(CMAKE_CXX_STANDARD 20)
