@@ -7,6 +7,7 @@
 #include <SoapySDR/Formats.h>
 
 #include <complex>
+#include <iostream>
 
 #include <string.h>
 
@@ -14,10 +15,27 @@ class FileDevice : public SoapySDR::Device {
 private:
   char *path;
 
+  int file_type;   // 0: HackRF transfer format, 1: Custom format
   int stream_type; // 0: CS8, 1: CF32
 
+  void path_to_type() {
+    // extension of `path`
+    char *ext = strrchr(path, '.');
+    if (ext == NULL) {
+      throw std::runtime_error("Failed to get extension of the file");
+    }
+
+    if (strcmp(ext, ".dat") == 0) {
+      file_type = 0;
+    } else if (strcmp(ext, ".txt") == 0) {
+      file_type = 1;
+    } else {
+      throw std::runtime_error("Unsupported file type");
+    }
+  }
+
 public:
-  FileDevice(char *path) : path(path) {}
+  FileDevice(char *path) : path(path) { path_to_type(); }
 
   SoapySDR::Stream *setupStream(const int direction, const std::string &format,
                                 const std::vector<size_t> &channels = {},
@@ -29,8 +47,9 @@ public:
     //               std::format("setupStream: direction: {}, format: {}",
     //                           direction, format));
 
-    SoapySDR::logf(SOAPY_SDR_TRACE, "setupStream: direction: %d, format: %s",
-                   direction, format.c_str());
+    SoapySDR::logf(SOAPY_SDR_INFO,
+                   "setupStream: direction: %d, format: %s, file_type: %d",
+                   direction, format.c_str(), file_type);
 
     if (direction == SOAPY_SDR_RX) {
       if (format == SOAPY_SDR_CS8) {
@@ -93,44 +112,80 @@ public:
     std::complex<int8_t> *buffer_ci8 = (std::complex<int8_t> *)buff;
     std::complex<float> *buffer_cf32 = (std::complex<float> *)buff;
 
-    if (feof(fp)) {
-      return SOAPY_SDR_UNDERFLOW;
-    }
+    if (file_type == 0) {
+      int num_read = 0;
+      std::complex<int8_t> tmp;
 
-    size_t size_in_file;
-    if (fscanf(fp, "%zu\n", &size_in_file) != 1) {
-      throw std::runtime_error("Failed to read size from file");
-    }
+      while (feof(fp) != EOF) {
+        if (num_read >= numElems) {
+          break;
+        }
 
-    SoapySDR::logf(SOAPY_SDR_TRACE,
-                   "readStream: numElems: %zu, size_in_file: %zu", numElems,
-                   size_in_file);
+        if (fread(&tmp, sizeof(int8_t), 2, fp) != 2) {
+          throw std::runtime_error("Failed to read data from file");
+        }
 
-    if (numElems < size_in_file) {
-      throw std::runtime_error("Buffer size is smaller than the file size");
-    }
+        if (stream_type == 0) {
+          buffer_ci8[num_read] = tmp;
+        } else {
+          buffer_cf32[num_read] = std::complex<float>(
+              (float)tmp.real() / 127.0f, (float)tmp.imag() / 127.0f);
+        }
 
-    for (size_t i = 0; i < size_in_file; i++) {
-      int real, imag;
-
-      if (fscanf(fp, "%d %d\n", &real, &imag) != 2) {
-        throw std::runtime_error("Failed to read data from file");
+        num_read += 1;
       }
 
-      if (stream_type == 0) {
-        buffer_ci8[i] = std::complex<int8_t>(real, imag);
-      } else {
-        buffer_cf32[i] =
-            std::complex<float>((float)real / 127.0f, (float)imag / 127.0f);
-      }
-    }
+      // std::cout << "num_read: " << num_read << std::endl;
 
-    return size_in_file;
+      // get file offset
+      // long offset = ftell(fp);
+      // std::cout << "offset: " << offset << std::endl;
+
+      return num_read;
+    } else if (file_type == 1) {
+      if (feof(fp)) {
+        return SOAPY_SDR_UNDERFLOW;
+      }
+      size_t size_in_file;
+      if (fscanf(fp, "%zu\n", &size_in_file) != 1) {
+        throw std::runtime_error("Failed to read size from file");
+      }
+
+      SoapySDR::logf(SOAPY_SDR_TRACE,
+                     "readStream: numElems: %zu, size_in_file: %zu", numElems,
+                     size_in_file);
+
+      if (numElems < size_in_file) {
+        throw std::runtime_error("Buffer size is smaller than the file size");
+      }
+
+      for (size_t i = 0; i < size_in_file; i++) {
+        int real, imag;
+
+        if (fscanf(fp, "%d %d\n", &real, &imag) != 2) {
+          throw std::runtime_error("Failed to read data from file");
+        }
+
+        if (stream_type == 0) {
+          buffer_ci8[i] = std::complex<int8_t>(real, imag);
+        } else {
+          buffer_cf32[i] =
+              std::complex<float>((float)real / 127.0f, (float)imag / 127.0f);
+        }
+      }
+
+      return size_in_file;
+    } else {
+      throw std::runtime_error("Unsupported file type");
+    }
   }
 
   int writeStream(SoapySDR::Stream *stream, const void *const *buffs,
                   const size_t numElems, int &flags, const long long timeNs = 0,
                   const long timeoutUs = 100000) override {
+    if (file_type != 1) {
+      throw std::runtime_error("Unsupported file type(Tx)");
+    }
 
     FILE *fp = (FILE *)stream;
 
@@ -139,24 +194,21 @@ public:
     const std::complex<int8_t> *buffer_ci8 = (const std::complex<int8_t> *)buff;
     const std::complex<float> *buffer_cf32 = (const std::complex<float> *)buff;
 
-    // file << numElems << std::endl;
-    // if (!(bool)file) {
-    //   throw std::runtime_error("Failed to write size to file");
-    // }
-
     fprintf(fp, "%zu\n", numElems);
 
     SoapySDR::logf(SOAPY_SDR_TRACE, "writeStream: numElems: %zu", numElems);
 
     for (size_t i = 0; i < numElems; i++) {
       if (stream_type == 0) {
-        fprintf(fp, "%d %d\n", (int)buffer_ci8[i].real(),
+        fprintf(fp, "%d %d ", (int)buffer_ci8[i].real(),
                 (int)buffer_ci8[i].imag());
       } else {
-        fprintf(fp, "%d %d\n", (int)(buffer_cf32[i].real() * 127.0f),
+        fprintf(fp, "%d %d ", (int)(buffer_cf32[i].real() * 127.0f),
                 (int)(buffer_cf32[i].imag() * 127.0f));
       }
     }
+
+    fprintf(fp, "\n");
 
     return numElems;
   }
